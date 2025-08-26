@@ -1,0 +1,22 @@
+# ===== Frontend (Next.js) =====
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/dist/
+frontend/.turbo/
+frontend/.vercel/
+npm-debug.log*
+# 环境变量文件（保留一个模板）
+frontend/.env*
+!frontend/.env.example
+
+# ===== Backend (.NET) =====
+**/bin/
+**/obj/
+*.user
+*.suo
+
+# ===== OS / 杂项 =====
+.DS_Store
+Thumbs.db
+logs/

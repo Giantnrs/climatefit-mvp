@@ -1,0 +1,70 @@
+{
+  "Users": {
+    "demo@user.com": {
+      "Email": "demo@user.com",
+      "Username": "demo",
+      "PasswordHash": "",
+      "Preferences": null,
+      "History": [
+        {
+          "Cities": [
+            "Auckland",
+            "Hamilton",
+            "Hamilton"
+          ],
+          "Date": "2025-08-26"
+        },
+        {
+          "Cities": [
+            "Auckland",
+            "Hamilton",
+            "Hamilton"
+          ],
+          "Date": "2025-08-26"
+        }
+      ]
+    }
+  },
+  "Submissions": [
+    {
+      "Time": "2025-08-26T02:24:10.0286688+00:00",
+      "Email": "demo@user.com",
+      "Onboarding": {
+        "PrefTemp": null,
+        "RainDays": null,
+        "FourSeasons": null,
+        "MinWinter": null,
+        "LikedCities": null,
+        "DislikedCities": null,
+        "Region": null,
+        "Focus": null,
+        "Save": null
+      },
+      "Cities": [
+        "Auckland",
+        "Hamilton",
+        "Hamilton"
+      ]
+    },
+    {
+      "Time": "2025-08-26T02:24:10.0489879+00:00",
+      "Email": "demo@user.com",
+      "Onboarding": {
+        "PrefTemp": null,
+        "RainDays": null,
+        "FourSeasons": null,
+        "MinWinter": null,
+        "LikedCities": null,
+        "DislikedCities": null,
+        "Region": null,
+        "Focus": null,
+        "Save": null
+      },
+      "Cities": [
+        "Auckland",
+        "Hamilton",
+        "Hamilton"
+      ]
+    }
+  ]
+}
