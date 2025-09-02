@@ -1,16 +1,55 @@
-
 using ClimateFit.Api.Models;
 using ClimateFit.Api.Services;
 using Microsoft.OpenApi.Models;
 using System.Text.Json;
 using Amazon.DynamoDBv2;
 using Amazon;
+using System.Security.Claims;
+using System.Text;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 
 var builder = WebApplication.CreateBuilder(args);
 var front = Environment.GetEnvironmentVariable("FRONTEND_ORIGIN") ?? "http://localhost:3000";
 builder.Services.AddCors(opt=> opt.AddPolicy("frontend", p=> p.WithOrigins(front).AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c=> c.SwaggerDoc("v1", new OpenApiInfo{ Title="ClimateFit API", Version="v1" }));
+
+// Add JWT Authentication
+var jwtKey = builder.Configuration["Jwt:Secret"];
+builder.Services.AddAuthentication("Bearer")
+    .AddJwtBearer("Bearer", options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+            ClockSkew = TimeSpan.FromSeconds(30) // Allow a small clock skew
+        };
+        
+        // Add debugging
+        options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
+        {
+            OnAuthenticationFailed = context =>
+            {
+                Console.WriteLine($"JWT Auth Failed: {context.Exception.Message}");
+                return Task.CompletedTask;
+            },
+            OnTokenValidated = context =>
+            {
+                Console.WriteLine("JWT Token validated successfully");
+                return Task.CompletedTask;
+            }
+        };
+    });
+
+builder.Services.AddAuthorization();
 builder.Services.AddSingleton<JwtService>();
 
 // Configure AWS DynamoDB
@@ -43,6 +82,8 @@ catch (Exception ex)
     Console.WriteLine("💡 Will fall back to local file storage. Configure AWS credentials to use DynamoDB.");
 }
 app.UseCors("frontend");
+app.UseAuthentication();
+app.UseAuthorization();
 if(app.Environment.IsDevelopment()){ app.UseSwagger(); app.UseSwaggerUI(); }
 
 app.MapGet("/health", ()=> Results.Ok( new { ok=true, time=DateTimeOffset.UtcNow }));
@@ -89,7 +130,7 @@ app.MapPost("/auth/login", async (LoginRequest req, DynamoDbService dynamoDb, Jw
             return Results.Unauthorized();
         }
 
-        var token = jwt.Create(req.Email);
+        var token = jwt.Create(req.Email, TimeSpan.FromMinutes(5));
         return Results.Ok(new LoginResponse(token));
     }
     catch (Exception ex)
@@ -122,29 +163,26 @@ app.MapPost("/auth/forgot", async (ForgotRequest req, DynamoDbService dynamoDb) 
     }
 });
 
-app.MapGet("/profile", async (HttpContext ctx, DynamoDbService dynamoDb, JwtService jwt) =>
+app.MapGet("/profile", async (HttpContext ctx, DynamoDbService dynamoDb) =>
 {
     try
-    {
-        // Extract email from JWT token (simplified for demo)
-        var authHeader = ctx.Request.Headers["Authorization"].FirstOrDefault();
-        if (authHeader?.StartsWith("Bearer ") != true)
+    {   Console.WriteLine("=== Profile endpoint called ===");
+        Console.WriteLine($"User.Identity.IsAuthenticated: {ctx.User.Identity.IsAuthenticated}");
+        Console.WriteLine("All claims:");
+        foreach (var claim in ctx.User.Claims)
         {
-            return Results.Unauthorized();
+            Console.WriteLine($"  {claim.Type} = {claim.Value}");
         }
-
-        // In a real implementation, you'd properly decode and validate the JWT
-        // For now, we'll extract email from token claims
-        var token = authHeader.Substring("Bearer ".Length).Trim();
-        var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
-        var jsonToken = handler.ReadJwtToken(token);
-        var email = jsonToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value;
-
+        
+        var email = ctx.User.FindFirst(ClaimTypes.Email)?.Value;
+        Console.WriteLine($"Extracted email: '{email}'");
+        
         if (string.IsNullOrEmpty(email))
         {
+            Console.WriteLine("❌ Email is null/empty - returning Unauthorized");
             return Results.Unauthorized();
         }
-
+        
         var user = await dynamoDb.GetUserAsync(email);
         if (user == null)
         {
@@ -157,24 +195,13 @@ app.MapGet("/profile", async (HttpContext ctx, DynamoDbService dynamoDb, JwtServ
     {
         return Results.BadRequest(new { error = ex.Message });
     }
-});
+}).RequireAuthorization();
 
 app.MapPut("/profile/preferences", async (HttpContext ctx, DynamoDbService dynamoDb) =>
 {
     try
     {
-        // Extract email from JWT token
-        var authHeader = ctx.Request.Headers["Authorization"].FirstOrDefault();
-        if (authHeader?.StartsWith("Bearer ") != true)
-        {
-            return Results.Unauthorized();
-        }
-
-        var token = authHeader.Substring("Bearer ".Length).Trim();
-        var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
-        var jsonToken = handler.ReadJwtToken(token);
-        var email = jsonToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value;
-
+        var email = ctx.User.FindFirst("email")?.Value;
         if (string.IsNullOrEmpty(email))
         {
             return Results.Unauthorized();
@@ -199,7 +226,7 @@ app.MapPut("/profile/preferences", async (HttpContext ctx, DynamoDbService dynam
     {
         return Results.BadRequest(new { error = ex.Message });
     }
-});
+}).RequireAuthorization();
 
 app.MapPost("/results", async (OnboardingRequest req, HttpContext ctx, DynamoDbService dynamoDb) =>
 {
@@ -207,13 +234,10 @@ app.MapPost("/results", async (OnboardingRequest req, HttpContext ctx, DynamoDbS
     {
         // Extract email from JWT token (optional for anonymous users)
         string email = "anonymous@local";
-        var authHeader = ctx.Request.Headers["Authorization"].FirstOrDefault();
-        if (authHeader?.StartsWith("Bearer ") == true)
+        var userEmail = ctx.User.FindFirst("email")?.Value;
+        if (!string.IsNullOrEmpty(userEmail))
         {
-            var token = authHeader.Substring("Bearer ".Length).Trim();
-            var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
-            var jsonToken = handler.ReadJwtToken(token);
-            email = jsonToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value ?? "anonymous@local";
+            email = userEmail;
         }
 
         // Simple rule-based demo suggestions based on user preferences
@@ -306,5 +330,14 @@ app.MapPost("/results", async (OnboardingRequest req, HttpContext ctx, DynamoDbS
         return Results.BadRequest(new { error = ex.Message });
     }
 });
+
+// Debugging: print all claims for the authenticated user
+app.MapGet("/debug/claims", async (HttpContext ctx) =>
+{
+    foreach (var claim in ctx.User.Claims)
+        Console.WriteLine($"Claim: {claim.Type} = {claim.Value}");
+
+    return Results.Ok();
+}).RequireAuthorization();
 
 app.Run();
