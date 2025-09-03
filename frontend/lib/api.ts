@@ -7,8 +7,12 @@ type Options = RequestInit & { json?: any; withAuth?: boolean }
 export async function apiFetch<T=any>(path:string, opts:Options={}){
   const url = `${API_BASE_URL}${path}`
   const headers: Record<string, string> = { 
-    'Content-Type':'application/json', 
-    ...(opts.headers||{}) 
+    'Content-Type':'application/json'
+  }
+  
+  // Merge additional headers if provided
+  if (opts.headers) {
+    Object.assign(headers, opts.headers)
   }
   
   // Add JWT token if withAuth is true or not explicitly set to false for protected endpoints
@@ -57,11 +61,24 @@ export async function apiFetch<T=any>(path:string, opts:Options={}){
   if(!res.ok) {
     let errorMessage = 'Request failed'
     try {
-      const errorData = await res.json()
-      errorMessage = errorData.error || errorData.message || errorMessage
+      // Clone the response so we can try both json and text
+      const resClone = res.clone()
+      try {
+        const errorData = await res.json()
+        errorMessage = errorData.error || errorData.message || errorMessage
+      } catch {
+        const textError = await resClone.text()
+        errorMessage = textError || `HTTP ${res.status}: ${res.statusText}`
+      }
     } catch {
-      errorMessage = await res.text() || `HTTP ${res.status}: ${res.statusText}`
+      errorMessage = `HTTP ${res.status}: ${res.statusText}`
     }
+    
+    // For login errors, provide user-friendly message
+    if (res.status === 401 && path.includes('/auth/login')) {
+      errorMessage = 'Email or Password is incorrect'
+    }
+    
     console.log(`❌ Request failed: ${errorMessage}`)
     throw new Error(errorMessage)
   }

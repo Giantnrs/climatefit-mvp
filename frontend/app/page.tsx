@@ -19,7 +19,7 @@ export default function HomePage(){
     if (token) {
       router.push('/onboarding')
     } else {
-      router.push('/login')
+      router.push('/login?from=get-started')
     }
   }
 

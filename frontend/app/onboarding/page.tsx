@@ -150,17 +150,23 @@ export default function OnboardingPage(){
         save
       }
       
-            await apiFetch('/results', {
+      await apiFetch('/results', {
         method: 'POST',
         json: payload
       })
 
-      // If user chose to save, also store locally for immediate access
+      // Always store locally for results page access
+      localStorage.setItem('cf_onboarding', JSON.stringify(payload))
+      
+      // If user chose to save, trigger storage event for other tabs/windows
       if (save) {
-        localStorage.setItem('cf_onboarding', JSON.stringify(payload))
         // Trigger storage event for other tabs/windows
         window.dispatchEvent(new Event('storage'))
       }
+      
+      // Always trigger profile update event after successful submission
+      // This will update both preferences (if saved) and history
+      window.dispatchEvent(new Event('profileUpdate'))
       
       router.push('/results')
     } catch (error) {

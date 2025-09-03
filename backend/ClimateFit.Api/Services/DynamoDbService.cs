@@ -11,12 +11,14 @@ public class DynamoDbService
     private readonly IAmazonDynamoDB _dynamoDb;
     private readonly string _usersTableName;
     private readonly string _submissionsTableName;
+    private readonly string _cityClimateTableName;
 
     public DynamoDbService(IAmazonDynamoDB dynamoDb, IConfiguration config)
     {
         _dynamoDb = dynamoDb;
         _usersTableName = config["DynamoDB:UsersTable"] ?? "ClimateFit-Users";
         _submissionsTableName = config["DynamoDB:SubmissionsTable"] ?? "ClimateFit-Submissions";
+        _cityClimateTableName = config["DynamoDB:CityClimateTable"] ?? "CityClimateProfiles";
     }
 
     public async Task EnsureTablesExistAsync()
@@ -184,6 +186,107 @@ public class DynamoDbService
         {
             throw new Exception($"Error creating submission: {ex.Message}", ex);
         }
+    }
+
+    // City Climate operations
+    public async Task<List<CityClimate>> GetAllCityClimatesAsync()
+    {
+        try
+        {
+            var cities = new List<CityClimate>();
+            var scanRequest = new ScanRequest
+            {
+                TableName = _cityClimateTableName
+            };
+
+            ScanResponse? response;
+            do
+            {
+                response = await _dynamoDb.ScanAsync(scanRequest);
+                
+                foreach (var item in response.Items)
+                {
+                    var city = MapDynamoDbItemToCityClimate(item);
+                    if (city != null)
+                    {
+                        cities.Add(city);
+                    }
+                }
+
+                scanRequest.ExclusiveStartKey = response.LastEvaluatedKey;
+            } while (response.LastEvaluatedKey != null && response.LastEvaluatedKey.Count > 0);
+
+            Console.WriteLine($"Loaded {cities.Count} cities from DynamoDB table {_cityClimateTableName}");
+            return cities;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading city climate data from DynamoDB: {ex.Message}");
+            throw new Exception($"Error loading city climate data: {ex.Message}", ex);
+        }
+    }
+
+    private CityClimate? MapDynamoDbItemToCityClimate(Dictionary<string, AttributeValue> item)
+    {
+        try
+        {
+            return new CityClimate
+            {
+                CityCountry = GetStringValue(item, "city_country"),
+                Coordinates = GetStringValue(item, "coordinates"),
+                AnnualPrecipitation = GetDoubleValue(item, "annual_precipitation"),
+                AutumnPrecipitation = GetDoubleValue(item, "autumn_precipitation"),
+                AutumnTemp = GetDoubleValue(item, "autumn_temp"),
+                AvgAnnualTemp = GetDoubleValue(item, "avg_annual_temp"),
+                CityName = GetStringValue(item, "city_name"),
+                ClimateType = GetStringValue(item, "climate_type"),
+                Country = GetStringValue(item, "country"),
+                DataYears = GetIntValue(item, "data_years"),
+                DriestSeason = GetStringValue(item, "driest_season"),
+                Hemisphere = GetStringValue(item, "hemisphere"),
+                Latitude = GetDoubleValue(item, "latitude"),
+                Longitude = GetDoubleValue(item, "longitude"),
+                SpringPrecipitation = GetDoubleValue(item, "spring_precipitation"),
+                SpringTemp = GetDoubleValue(item, "spring_temp"),
+                SummerMaxTemp = GetDoubleValue(item, "summer_max_temp"),
+                SummerPrecipitation = GetDoubleValue(item, "summer_precipitation"),
+                SummerTemp = GetDoubleValue(item, "summer_temp"),
+                TemperatureRange = GetDoubleValue(item, "temperature_range"),
+                TotalRecords = GetIntValue(item, "total_records"),
+                WettestSeason = GetStringValue(item, "wettest_season"),
+                WinterMinTemp = GetDoubleValue(item, "winter_min_temp"),
+                WinterPrecipitation = GetDoubleValue(item, "winter_precipitation"),
+                WinterTemp = GetDoubleValue(item, "winter_temp")
+            };
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error mapping DynamoDB item to CityClimate: {ex.Message}");
+            return null;
+        }
+    }
+
+    private string GetStringValue(Dictionary<string, AttributeValue> item, string key)
+    {
+        return item.ContainsKey(key) && item[key].S != null ? item[key].S : "";
+    }
+
+    private double GetDoubleValue(Dictionary<string, AttributeValue> item, string key)
+    {
+        if (item.ContainsKey(key) && item[key].N != null)
+        {
+            return double.TryParse(item[key].N, out var value) ? value : 0.0;
+        }
+        return 0.0;
+    }
+
+    private int GetIntValue(Dictionary<string, AttributeValue> item, string key)
+    {
+        if (item.ContainsKey(key) && item[key].N != null)
+        {
+            return int.TryParse(item[key].N, out var value) ? value : 0;
+        }
+        return 0;
     }
 }
 

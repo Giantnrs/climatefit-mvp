@@ -1,15 +1,16 @@
 
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { apiFetch } from '@/lib/api'
 import { saveToken } from '@/lib/auth'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 type Mode='login'|'signup'|'forgot'
 
 export default function LoginPage(){
   const [mode,setMode]=useState<Mode>('login')
   const router=useRouter()
+  const searchParams = useSearchParams()
   const [email,setEmail]=useState('')
   const [password,setPassword]=useState('')
   const [confirmPassword,setConfirmPassword]=useState('')
@@ -31,7 +32,15 @@ export default function LoginPage(){
     try {
       if(mode==='login'){
         const r = await apiFetch<{token:string}>('/auth/login',{method:'POST',json:{email,password}, withAuth: false})
-        saveToken(r.token); router.push('/onboarding')
+        saveToken(r.token)
+        
+        // Check if user came from "Get Started" button or just login/signup nav
+        const fromGetStarted = searchParams.get('from') === 'get-started'
+        if (fromGetStarted) {
+          router.push('/onboarding')
+        } else {
+          router.push('/')
+        }
       }else if(mode==='signup'){
         await apiFetch('/auth/register',{method:'POST',json:{email,password,username}, withAuth: false})
         setMsg('Registered successfully! Please login.'); setMode('login')

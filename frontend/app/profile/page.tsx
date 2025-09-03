@@ -12,10 +12,13 @@ export default function ProfilePage(){
   const fetchProfile = async () => {
     setLoading(true)
     try{ 
+      console.log('Fetching profile from API...')
       const profile = await apiFetch<Profile>('/profile', { method:'GET'})
+      console.log('Profile fetched:', profile)
       setP(profile)
     }
     catch(error){ 
+      console.error('Failed to fetch profile from API:', error)
       // Fallback to localStorage if API fails
       const localPrefs = localStorage.getItem('cf_onboarding')
       
@@ -25,6 +28,7 @@ export default function ProfilePage(){
         preferences: localPrefs ? JSON.parse(localPrefs) : null, // Don't provide demo data
         history: []
       }
+      console.log('Using fallback profile:', demoProfile)
       setP(demoProfile) 
     }
     setLoading(false)
@@ -41,8 +45,15 @@ export default function ProfilePage(){
     }
     window.addEventListener('storage', handleStorageChange)
     
+    // Also listen for custom events from questionnaire submission
+    const handleProfileUpdate = () => {
+      fetchProfile()
+    }
+    window.addEventListener('profileUpdate', handleProfileUpdate)
+    
     return () => {
       window.removeEventListener('storage', handleStorageChange)
+      window.removeEventListener('profileUpdate', handleProfileUpdate)
     }
   }, [])
 
@@ -138,11 +149,21 @@ export default function ProfilePage(){
           <div className="rounded-2xl border border-gray-200 p-6 bg-white shadow-sm">
             <h3 className="font-semibold mb-4 text-lg">Test History</h3>
             {p?.history?.length ? (
-              <div className="space-y-3">
-                {p.history.map((h, i) => (
-                  <div key={i} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                    <span className="text-sm text-gray-600">{h.date}</span>
-                    <span className="text-sm font-medium">{h.cities.join(', ')}</span>
+              <div className="space-y-4">
+                {p.history.slice().reverse().map((h, i) => (
+                  <div key={i} className="p-4 bg-gray-50 rounded-lg">
+                    <div className="text-sm text-gray-600 mb-2 font-medium">
+                      <span className="inline-flex items-center gap-1">
+                        📅 {h.date}
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      {h.cities.map((city, cityIndex) => (
+                        <div key={cityIndex} className="text-sm font-medium text-gray-800 py-1 px-2 bg-white rounded border-l-4 border-blue-500">
+                          {city}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>

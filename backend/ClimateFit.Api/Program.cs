@@ -18,6 +18,9 @@ builder.Services.AddSwaggerGen(c=> c.SwaggerDoc("v1", new OpenApiInfo{ Title="Cl
 
 // Add JWT Authentication
 var jwtKey = builder.Configuration["Jwt:Secret"];
+// Register services
+builder.Services.AddSingleton<CityRecommendationService>();
+
 builder.Services.AddAuthentication("Bearer")
     .AddJwtBearer("Bearer", options =>
     {
@@ -130,7 +133,7 @@ app.MapPost("/auth/login", async (LoginRequest req, DynamoDbService dynamoDb, Jw
             return Results.Unauthorized();
         }
 
-        var token = jwt.Create(req.Email, TimeSpan.FromMinutes(5));
+        var token = jwt.Create(req.Email, TimeSpan.FromMinutes(30));
         return Results.Ok(new LoginResponse(token));
     }
     catch (Exception ex)
@@ -201,7 +204,7 @@ app.MapPut("/profile/preferences", async (HttpContext ctx, DynamoDbService dynam
 {
     try
     {
-        var email = ctx.User.FindFirst("email")?.Value;
+        var email = ctx.User.FindFirst(ClaimTypes.Email)?.Value ?? ctx.User.FindFirst("email")?.Value;
         if (string.IsNullOrEmpty(email))
         {
             return Results.Unauthorized();
@@ -228,60 +231,21 @@ app.MapPut("/profile/preferences", async (HttpContext ctx, DynamoDbService dynam
     }
 }).RequireAuthorization();
 
-app.MapPost("/results", async (OnboardingRequest req, HttpContext ctx, DynamoDbService dynamoDb) =>
+app.MapPost("/results", async (OnboardingRequest req, HttpContext ctx, DynamoDbService dynamoDb, CityRecommendationService recommendationService) =>
 {
     try
     {
         // Extract email from JWT token (optional for anonymous users)
         string email = "anonymous@local";
-        var userEmail = ctx.User.FindFirst("email")?.Value;
+        var userEmail = ctx.User.FindFirst(ClaimTypes.Email)?.Value ?? ctx.User.FindFirst("email")?.Value;
         if (!string.IsNullOrEmpty(userEmail))
         {
             email = userEmail;
         }
 
-        // Simple rule-based demo suggestions based on user preferences
-        var list = new List<City>();
-        
-        // Base recommendations on temperature preferences
-        if (req.avgTemp.HasValue && req.avgTemp.Value > 25)
-        {
-            list.Add(new City("Auckland", "Warm maritime climate."));
-            list.Add(new City("Wellington", "Moderate temperatures."));
-        }
-        else if (req.avgTemp.HasValue && req.avgTemp.Value < 15)
-        {
-            list.Add(new City("Christchurch", "Cooler climate."));
-            list.Add(new City("Dunedin", "Southern cooler climate."));
-        }
-        else
-        {
-            list.Add(new City("Auckland", "Balanced climate."));
-            list.Add(new City("Wellington", "Temperate climate."));
-        }
-        
-        // Add favorite cities if provided
-        if (req.favoriteCities != null && req.favoriteCities.Length > 0)
-        {
-            foreach (var city in req.favoriteCities.Take(2))
-            {
-                if (!list.Any(c => c.Name.Equals(city, StringComparison.OrdinalIgnoreCase)))
-                {
-                    list.Add(new City(city, "Your preferred city."));
-                }
-            }
-        }
-        
-        // Ensure we have at least 3 recommendations
-        while (list.Count < 3) 
-        {
-            if (!list.Any(c => c.Name == "Hamilton"))
-                list.Add(new City("Hamilton", "Inland temperate."));
-            else if (!list.Any(c => c.Name == "Tauranga"))
-                list.Add(new City("Tauranga", "Coastal warm."));
-            else
-                list.Add(new City("Napier", "Sunny Hawke's Bay."));
-        }
+        // Get city recommendations using the new service
+        var recommendations = await recommendationService.GetRecommendationsAsync(req);
+        var list = recommendations.Select(r => new City(r.CityName + ", " + r.Country, r.Summary)).ToList();
 
         // Save submission
         var submission = new SubmissionEntity
@@ -289,38 +253,63 @@ app.MapPost("/results", async (OnboardingRequest req, HttpContext ctx, DynamoDbS
             Time = DateTimeOffset.UtcNow,
             Email = email,
             Onboarding = req,
-            Cities = list.Select(c => c.Name).ToArray()
+            Cities = recommendations.Select(r => r.CityName + ", " + r.Country).ToArray()
         };
         await dynamoDb.CreateSubmissionAsync(submission);
 
         // Update user preferences and history if logged in
         if (email != "anonymous@local")
         {
+            Console.WriteLine($"Updating user data for logged in user: {email}");
             var user = await dynamoDb.GetUserAsync(email);
             if (user != null)
             {
+                Console.WriteLine($"User found. Current preferences: {user.Preferences != null}");
+                Console.WriteLine($"Save flag: {req.save}");
+                
                 if (req.save == true)
                 {
+                    Console.WriteLine("Saving preferences to user profile");
                     user.Preferences = req;
                 }
                 
-                // Only add to history if it's a new submission (check if last entry is different)
-                var newHistoryItem = new HistoryItem(list.Select(c => c.Name).ToArray(), DateTimeOffset.UtcNow.ToString("yyyy-MM-dd"));
-                if (user.History.Count == 0 || 
+                // Always add to history for logged in users
+                var newHistoryItem = new HistoryItem(recommendations.Select(r => r.CityName + ", " + r.Country).ToArray(), DateTimeOffset.UtcNow.ToString("yyyy-MM-dd HH:mm"));
+                Console.WriteLine($"Adding history item: {string.Join(", ", newHistoryItem.Cities)} on {newHistoryItem.Date}");
+                
+                // Only add if it's a genuinely new submission (different from the last one)
+                var shouldAddHistory = user.History.Count == 0 || 
                     !user.History.Last().Cities.SequenceEqual(newHistoryItem.Cities) ||
-                    user.History.Last().Date != newHistoryItem.Date)
+                    user.History.Last().Date != newHistoryItem.Date;
+                
+                if (shouldAddHistory)
                 {
                     user.History.Add(newHistoryItem);
+                    Console.WriteLine($"History item added. Total history count: {user.History.Count}");
                     
                     // Keep only the last 3 history items
                     if (user.History.Count > 3)
                     {
                         user.History = user.History.Skip(user.History.Count - 3).ToList();
+                        Console.WriteLine("Trimmed history to last 3 items");
                     }
+                }
+                else
+                {
+                    Console.WriteLine("Skipping duplicate history entry");
                 }
                 
                 await dynamoDb.UpdateUserAsync(user);
+                Console.WriteLine("User data updated successfully");
             }
+            else
+            {
+                Console.WriteLine($"⚠️ User not found in database: {email}");
+            }
+        }
+        else
+        {
+            Console.WriteLine("Anonymous user - skipping profile update");
         }
 
         return Results.Ok(list);
