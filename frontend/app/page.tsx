@@ -7,11 +7,8 @@ import { getToken } from '@/lib/auth'
 // Client-side rendering for MapView to avoid SSR issues
 const MapView = dynamic(() => import('@/components/MapView'), { ssr: false })
 
-import Timeline from '@/components/Timeline'
-
 export default function HomePage(){
   const [layer, setLayer] = useState<'temp'|'precip'>('temp')
-  const [currentQuarter, setCurrentQuarter] = useState<'Q1'|'Q2'|'Q3'|'Q4'>('Q4')
   const router = useRouter()
 
   const handleGetStarted = () => {
@@ -21,10 +18,6 @@ export default function HomePage(){
     } else {
       router.push('/login?from=get-started')
     }
-  }
-
-  const handleTimelineChange = (quarter: 'Q1'|'Q2'|'Q3'|'Q4') => {
-    setCurrentQuarter(quarter)
   }
 
   return (
@@ -48,11 +41,9 @@ export default function HomePage(){
       </div>
 
       {/* Map component loaded on client-side to avoid SSR window errors */}
-      <div className="rounded-2xl overflow-hidden border border-gray-200 shadow-lg">
-        <MapView layer={layer} quarter={currentQuarter} />
+      <div className="rounded-2xl overflow-hidden border border-gray-200 shadow-lg max-w-none w-full">
+        <MapView layer={layer} />
       </div>
-
-      <Timeline onChange={handleTimelineChange} />
       
       <div className="rounded-2xl border border-gray-200 p-8 bg-gradient-to-br from-blue-50 to-green-50 text-center">
         <div className="max-w-2xl mx-auto space-y-4">

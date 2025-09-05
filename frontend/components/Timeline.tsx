@@ -1,92 +1,176 @@
-
 'use client'
-import { useEffect, useRef, useState } from 'react'
-import { getQuarterLabel } from '@/lib/cityData'
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { getMonthLabel, getAvailableMonths } from '@/lib/climateData'
 
-type Quarter = 'Q1' | 'Q2' | 'Q3' | 'Q4'
-
-export default function Timeline({ onChange }: { onChange: (quarter: Quarter) => void }) {
-  const [currentIndex, setCurrentIndex] = useState(3) // Start with Q4 (latest)
-  const [playing, setPlaying] = useState(false)
-  const timer = useRef<any>(null)
+export default function Timeline({ onChange }: { onChange: (monthKey: string) => void }) {
+  const [selectedYear, setSelectedYear] = useState<string>('')
+  const [selectedMonth, setSelectedMonth] = useState<string>('')
+  const [months, setMonths] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
+  const debounceTimer = useRef<any>(null)
   
-  const quarters: Quarter[] = ['Q1', 'Q2', 'Q3', 'Q4']
-  
-  useEffect(() => { 
-    onChange(quarters[currentIndex]) 
-  }, [currentIndex, onChange])
-  
+  // Load available months on component mount
   useEffect(() => {
-    if (playing) {
-      timer.current = setInterval(() => 
-        setCurrentIndex(x => x >= 3 ? 0 : x + 1), 1000
-      )
-    } else if (timer.current) { 
-      clearInterval(timer.current) 
+    const loadMonths = async () => {
+      try {
+        const availableMonths = await getAvailableMonths()
+        setMonths(availableMonths)
+        // Start with the most recent month
+        if (availableMonths.length > 0) {
+          const latestMonth = availableMonths[availableMonths.length - 1]
+          const [year, month] = latestMonth.split('-')
+          setSelectedYear(year)
+          setSelectedMonth(month)
+        }
+      } catch (error) {
+        console.error('Failed to load months:', error)
+        // fallback with recent months
+        const fallbackMonths = []
+        for (let year = 2023; year <= 2024; year++) {
+          for (let month = 1; month <= 12; month++) {
+            fallbackMonths.push(`${year}-${month.toString().padStart(2, '0')}`)
+          }
+        }
+        setMonths(fallbackMonths)
+        if (fallbackMonths.length > 0) {
+          const latestMonth = fallbackMonths[fallbackMonths.length - 1]
+          const [year, month] = latestMonth.split('-')
+          setSelectedYear(year)
+          setSelectedMonth(month)
+        }
+      } finally {
+        setLoading(false)
+      }
     }
-    return () => timer.current && clearInterval(timer.current)
-  }, [playing])
+    loadMonths()
+  }, [])
+
+  // Debounced onChange to prevent too many rapid updates
+  const debouncedOnChange = useCallback((monthKey: string) => {
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current)
+    }
+    debounceTimer.current = setTimeout(() => {
+      onChange(monthKey)
+    }, 100) // 100ms debounce
+  }, [onChange])
+
+  // Update month key when year or month changes
+  useEffect(() => { 
+    if (selectedYear && selectedMonth) {
+      const monthKey = `${selectedYear}-${selectedMonth}`
+      debouncedOnChange(monthKey)
+    }
+  }, [selectedYear, selectedMonth, debouncedOnChange])
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current)
+    }
+  }, [])
+
+  // Get available years from months data
+  const availableYears = Array.from(new Set(months.map(m => m.split('-')[0]))).sort()
   
+  // Get available months for selected year
+  const availableMonthsForYear = months
+    .filter(m => m.startsWith(selectedYear))
+    .map(m => m.split('-')[1])
+    .sort()
+
   return (
     <div className="rounded-xl border p-4 bg-white">
-      <div className="flex items-center gap-3 mb-3">
-        <button 
-          className="px-4 py-2 rounded-lg border bg-gray-50 hover:bg-gray-100 transition-colors flex items-center gap-2" 
-          onClick={() => setPlaying(p => !p)}
-        >
-          {playing ? (
-            <>
-              <div className="w-3 h-3 flex gap-0.5">
-                <div className="w-1 h-3 bg-gray-600"></div>
-                <div className="w-1 h-3 bg-gray-600"></div>
-              </div>
-              Pause
-            </>
-          ) : (
-            <>
-              <div className="w-0 h-0 border-l-4 border-l-gray-600 border-t-2 border-t-transparent border-b-2 border-b-transparent"></div>
-              Play
-            </>
-          )}
-        </button>
-        <div className="flex-1 text-center">
-          <div className="text-lg font-semibold text-gray-900">
-            {getQuarterLabel(quarters[currentIndex])}
-          </div>
-          <div className="text-sm text-gray-600">
-            Climate Data Timeline
-          </div>
+      <div className="text-center mb-4">
+        <div className="text-lg font-semibold text-gray-900">
+          {loading ? 'Loading...' : selectedYear && selectedMonth ? getMonthLabel(`${selectedYear}-${selectedMonth}`) : 'Select Date'}
+        </div>
+        <div className="text-sm text-gray-600">
+          Monthly Climate Data
         </div>
       </div>
       
-      <div className="relative">
-        <input 
-          type="range" 
-          min={0} 
-          max={3} 
-          value={currentIndex} 
-          onChange={e => setCurrentIndex(parseInt(e.target.value))} 
-          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
-          style={{
-            background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(currentIndex / 3) * 100}%, #e5e7eb ${(currentIndex / 3) * 100}%, #e5e7eb 100%)`
-          }}
-        />
-        <div className="flex justify-between mt-2 text-xs text-gray-600">
-          {quarters.map((quarter, index) => (
-            <button
-              key={quarter}
-              onClick={() => setCurrentIndex(index)}
-              className={`px-2 py-1 rounded transition-colors ${
-                currentIndex === index 
-                  ? 'bg-blue-100 text-blue-800 font-medium' 
-                  : 'hover:bg-gray-100'
-              }`}
+      {!loading && months.length > 0 && (
+        <div className="space-y-4">
+          {/* Year selector */}
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium text-gray-700">Year:</label>
+            <select 
+              value={selectedYear}
+              onChange={(e) => {
+                const year = e.target.value
+                setSelectedYear(year)
+                // Reset month to first available month for the selected year
+                const yearMonths = months.filter(m => m.startsWith(year))
+                if (yearMonths.length > 0) {
+                  const firstMonth = yearMonths[0].split('-')[1]
+                  setSelectedMonth(firstMonth)
+                }
+              }}
+              className="border rounded px-3 py-2 bg-white text-sm min-w-[100px]"
             >
-              {quarter}
-            </button>
-          ))}
+              <option value="">Select Year</option>
+              {availableYears.map(year => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+          </div>
+          
+          {/* Month selector */}
+          {selectedYear && (
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-gray-700">Month:</label>
+              <select 
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="border rounded px-3 py-2 bg-white text-sm min-w-[120px]"
+              >
+                <option value="">Select Month</option>
+                {availableMonthsForYear.map(month => {
+                  const monthNum = parseInt(month)
+                  const monthNames = [
+                    'January', 'February', 'March', 'April', 'May', 'June',
+                    'July', 'August', 'September', 'October', 'November', 'December'
+                  ]
+                  return (
+                    <option key={month} value={month}>
+                      {monthNames[monthNum - 1]} ({month})
+                    </option>
+                  )
+                })}
+              </select>
+            </div>
+          )}
+          
+          {/* Quick navigation to key years */}
+          <div className="pt-3 border-t">
+            <div className="text-xs text-gray-500 mb-2 text-center">Quick Jump:</div>
+            <div className="flex justify-center gap-2 flex-wrap">
+              {['2020', '2021', '2022', '2023', '2024'].map(year => (
+                <button
+                  key={year}
+                  onClick={() => {
+                    setSelectedYear(year)
+                    // Set to December if available, otherwise first available month
+                    const yearMonths = months.filter(m => m.startsWith(year))
+                    if (yearMonths.length > 0) {
+                      const decMonth = yearMonths.find(m => m.endsWith('-12'))
+                      setSelectedMonth(decMonth ? '12' : yearMonths[0].split('-')[1])
+                    }
+                  }}
+                  className={`text-xs px-3 py-1 rounded transition-colors ${
+                    selectedYear === year
+                      ? 'bg-blue-500 text-white' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {year}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

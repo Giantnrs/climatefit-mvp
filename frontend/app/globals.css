@@ -4,9 +4,59 @@
 @tailwind utilities;
 
 html, body, #__next { height: 100%; }
-.container { @apply max-w-5xl mx-auto px-4; }
+.container { @apply max-w-7xl mx-auto px-4; }
 
-.leaflet-container { width: 100%; height: 480px; border-radius: 16px; }
+.leaflet-container { 
+  width: 100%; 
+  height: 640px; 
+  border-radius: 16px; 
+}
+
+/* Ensure map takes full container height */
+.leaflet-container.w-full.h-full {
+  height: 100% !important;
+}
+
+/* Climate data visualization styles */
+.climate-circle-glow {
+  filter: drop-shadow(0 0 8px rgba(0, 0, 0, 0.3));
+  animation: pulse-glow 3s ease-in-out infinite;
+  position: relative;
+}
+
+/* Gradient effect for circles - center opaque to edge transparent */
+.climate-circle-gradient {
+  position: relative;
+  mask: radial-gradient(circle, black 0%, black 50%, transparent 100%);
+  -webkit-mask: radial-gradient(circle, black 0%, black 50%, transparent 100%);
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.2));
+    opacity: 0.8;
+  }
+  50% {
+    filter: drop-shadow(0 0 10px rgba(0, 0, 0, 0.4));
+    opacity: 1;
+  }
+}
+
+/* Map legend styles */
+.map-legend {
+  z-index: 1000 !important;
+  position: absolute;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  pointer-events: auto;
+}
+
+/* Continent selector styles */
+.continent-selector {
+  z-index: 1001 !important;
+  position: relative;
+  pointer-events: auto;
+}
 
 /* Custom slider styles */
 .slider::-webkit-slider-thumb {

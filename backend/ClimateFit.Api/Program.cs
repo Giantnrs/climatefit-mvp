@@ -3,6 +3,7 @@ using ClimateFit.Api.Services;
 using Microsoft.OpenApi.Models;
 using System.Text.Json;
 using Amazon.DynamoDBv2;
+using Amazon.S3;
 using Amazon;
 using System.Security.Claims;
 using System.Text;
@@ -55,14 +56,20 @@ builder.Services.AddAuthentication("Bearer")
 builder.Services.AddAuthorization();
 builder.Services.AddSingleton<JwtService>();
 
-// Configure AWS DynamoDB
+// Configure AWS DynamoDB and S3
 var region = builder.Configuration["DynamoDB:Region"] ?? "us-east-1";
 builder.Services.AddSingleton<IAmazonDynamoDB>(sp => 
 {
     var config = new AmazonDynamoDBConfig { RegionEndpoint = RegionEndpoint.GetBySystemName(region) };
     return new AmazonDynamoDBClient(config);
 });
+builder.Services.AddSingleton<IAmazonS3>(sp => 
+{
+    var config = new AmazonS3Config { RegionEndpoint = RegionEndpoint.GetBySystemName(region) };
+    return new AmazonS3Client(config);
+});
 builder.Services.AddSingleton<DynamoDbService>();
+builder.Services.AddSingleton<ClimateDataService>();
 
 // Keep FileDb as fallback for development
 builder.Services.AddSingleton<FileDb<DbSchema>>(sp => {
@@ -317,6 +324,63 @@ app.MapPost("/results", async (OnboardingRequest req, HttpContext ctx, DynamoDbS
     catch (Exception ex)
     {
         return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+// Climate data endpoints
+app.MapGet("/api/climate/months", async (ClimateDataService climateService) =>
+{
+    try
+    {
+        var months = await climateService.GetAvailableMonthsAsync();
+        return Results.Ok(months);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error getting months: {ex.Message}");
+        return Results.Problem("Failed to load climate months");
+    }
+});
+
+app.MapGet("/api/climate/month/{monthKey}", async (string monthKey, ClimateDataService climateService) =>
+{
+    try
+    {
+        var cities = await climateService.GetCitiesForMonthAsync(monthKey);
+        return Results.Ok(cities);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error getting climate data for month {monthKey}: {ex.Message}");
+        return Results.Problem("Failed to load climate data for the specified month");
+    }
+});
+
+app.MapGet("/api/climate/quarters", async (ClimateDataService climateService) =>
+{
+    try
+    {
+        var quarters = await climateService.GetAvailableQuartersAsync();
+        return Results.Ok(quarters);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error getting quarters: {ex.Message}");
+        return Results.Problem("Failed to load climate quarters");
+    }
+});
+
+app.MapGet("/api/climate/{quarter}", async (string quarter, ClimateDataService climateService) =>
+{
+    try
+    {
+        var cities = await climateService.GetCitiesForQuarterAsync(quarter);
+        return Results.Ok(cities);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error getting climate data for quarter {quarter}: {ex.Message}");
+        return Results.Problem("Failed to load climate data for the specified quarter");
     }
 });
 
