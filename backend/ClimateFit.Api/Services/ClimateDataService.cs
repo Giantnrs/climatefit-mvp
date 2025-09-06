@@ -9,7 +9,7 @@ public class ClimateDataService
 {
     private readonly IAmazonS3 _s3Client;
     private readonly string _bucketName = "climate-data-bucket-527";
-    private readonly string _dataKey = "climate-data/climate_famous300_cities_monthly_20250906_020115.json";
+    private readonly string _dataKey = "climate-data/climate_famous300_cities_monthly_20250906_232949.json";
     private List<ClimateRecord>? _cachedData;
     private readonly SemaphoreSlim _cacheSemaphore = new(1, 1);
 

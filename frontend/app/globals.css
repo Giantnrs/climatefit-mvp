@@ -20,27 +20,16 @@ html, body, #__next { height: 100%; }
 /* Climate data visualization styles */
 .climate-circle-glow {
   filter: drop-shadow(0 0 8px rgba(0, 0, 0, 0.3));
-  animation: pulse-glow 3s ease-in-out infinite;
   position: relative;
 }
 
 /* Gradient effect for circles - center opaque to edge transparent */
 .climate-circle-gradient {
   position: relative;
-  mask: radial-gradient(circle, black 0%, black 50%, transparent 100%);
-  -webkit-mask: radial-gradient(circle, black 0%, black 50%, transparent 100%);
+  mask: radial-gradient(circle, black 0%, transparent 100%);
+  -webkit-mask: radial-gradient(circle, black 0%, transparent 100%);
 }
 
-@keyframes pulse-glow {
-  0%, 100% {
-    filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.2));
-    opacity: 0.8;
-  }
-  50% {
-    filter: drop-shadow(0 0 10px rgba(0, 0, 0, 0.4));
-    opacity: 1;
-  }
-}
 
 /* Map legend styles */
 .map-legend {

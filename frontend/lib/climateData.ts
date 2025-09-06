@@ -35,13 +35,17 @@ export const getTemperatureColor = (temp: number): string => {
 }
 
 export const getRainfallColor = (rainfall: number): string => {
-  if (rainfall <= 10) return '#f5deb3'    // Light beige (very dry)
-  if (rainfall <= 25) return '#deb887'    // Tan (dry)
-  if (rainfall <= 50) return '#90ee90'    // Light green (moderate)
-  if (rainfall <= 100) return '#32cd32'   // Lime green (good)
-  if (rainfall <= 150) return '#0000ff'   // Blue (wet)
-  if (rainfall <= 200) return '#0000cd'   // Medium blue (very wet)
-  return '#000080'                        // Navy blue (extremely wet)
+  // Convert daily precipitation (mm/day) to monthly total (mm/month)
+  // Assuming average 30 days per month
+  const monthlyTotal = rainfall * 30
+  
+  if (monthlyTotal <= 10) return '#8B4513'     // Saddle brown (very dry)
+  if (monthlyTotal <= 25) return '#D2691E'    // Chocolate (dry)
+  if (monthlyTotal <= 50) return '#F4A460'    // Sandy brown (moderate)
+  if (monthlyTotal <= 100) return '#FFD700'   // Gold (good)
+  if (monthlyTotal <= 150) return '#00BFFF'   // Deep sky blue (wet)
+  if (monthlyTotal <= 200) return '#1E90FF'   // Dodger blue (very wet)
+  return '#0000FF'                        // Pure blue (extremely wet)
 }
 
 export const getMonthLabel = (monthKey: string): string => {

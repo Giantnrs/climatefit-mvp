@@ -69,7 +69,7 @@ export default function MapView({ layer }: Props) {
         color: color,
         fillColor: color,
         fillOpacity: 0.7,
-        radius: 100000,
+        radius: 80000,
         weight: 2,
         className: 'climate-circle-glow climate-circle-gradient'
       }
@@ -79,7 +79,7 @@ export default function MapView({ layer }: Props) {
         color: color,
         fillColor: color,
         fillOpacity: 0.7,
-        radius: 100000,
+        radius: 80000,
         weight: 2,
         className: 'climate-circle-glow climate-circle-gradient'
       }
@@ -131,7 +131,7 @@ export default function MapView({ layer }: Props) {
                   </div>
                 ) : (
                   <div className="text-xs">
-                    <div>Precipitation: {city.precipitation.toFixed(1)}mm</div>
+                    <div>Precipitation: {(city.precipitation * 30).toFixed(1)}mm/month</div>
                   </div>
                 )}
               </div>
@@ -175,13 +175,13 @@ export default function MapView({ layer }: Props) {
             </>
           ) : (
             <>
-              <div className="flex items-center"><div className="w-4 h-4 mr-2" style={{backgroundColor: '#f5deb3'}}></div>≤ 10mm</div>
-              <div className="flex items-center"><div className="w-4 h-4 mr-2" style={{backgroundColor: '#deb887'}}></div>10-25mm</div>
-              <div className="flex items-center"><div className="w-4 h-4 mr-2" style={{backgroundColor: '#90ee90'}}></div>25-50mm</div>
-              <div className="flex items-center"><div className="w-4 h-4 mr-2" style={{backgroundColor: '#32cd32'}}></div>50-100mm</div>
-              <div className="flex items-center"><div className="w-4 h-4 mr-2" style={{backgroundColor: '#0000ff'}}></div>100-150mm</div>
-              <div className="flex items-center"><div className="w-4 h-4 mr-2" style={{backgroundColor: '#0000cd'}}></div>150-200mm</div>
-              <div className="flex items-center"><div className="w-4 h-4 mr-2" style={{backgroundColor: '#000080'}}></div>&gt; 200mm</div>
+              <div className="flex items-center"><div className="w-4 h-4 mr-2" style={{backgroundColor: '#8B4513'}}></div>≤ 10mm</div>
+              <div className="flex items-center"><div className="w-4 h-4 mr-2" style={{backgroundColor: '#D2691E'}}></div>10-25mm</div>
+              <div className="flex items-center"><div className="w-4 h-4 mr-2" style={{backgroundColor: '#F4A460'}}></div>25-50mm</div>
+              <div className="flex items-center"><div className="w-4 h-4 mr-2" style={{backgroundColor: '#FFD700'}}></div>50-100mm</div>
+              <div className="flex items-center"><div className="w-4 h-4 mr-2" style={{backgroundColor: '#00BFFF'}}></div>100-150mm</div>
+              <div className="flex items-center"><div className="w-4 h-4 mr-2" style={{backgroundColor: '#1E90FF'}}></div>150-200mm</div>
+              <div className="flex items-center"><div className="w-4 h-4 mr-2" style={{backgroundColor: '#0000FF'}}></div>&gt; 200mm</div>
             </>
           )}
         </div>
