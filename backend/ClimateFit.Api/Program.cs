@@ -327,6 +327,22 @@ app.MapPost("/results", async (OnboardingRequest req, HttpContext ctx, DynamoDbS
     }
 });
 
+// City list endpoint for questionnaire
+app.MapGet("/api/cities", async (DynamoDbService dynamoDb) =>
+{
+    try
+    {
+        var cities = await dynamoDb.GetAllCityClimatesAsync();
+        var cityNames = cities.Select(c => c.CityName).Distinct().OrderBy(name => name).ToList();
+        return Results.Ok(cityNames);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error getting cities: {ex.Message}");
+        return Results.Problem("Failed to load city list");
+    }
+});
+
 // Climate data endpoints
 app.MapGet("/api/climate/months", async (ClimateDataService climateService) =>
 {

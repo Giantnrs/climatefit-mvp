@@ -1,38 +1,39 @@
 
 'use client'
 import { useRouter } from 'next/navigation'
-import { useState, useEffect, useCallback, useMemo, memo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react'
 import { getToken } from '@/lib/auth'
 import { apiFetch } from '@/lib/api'
 
-// City database - in the future this could be loaded from an API
-const CITY_DATABASE = [
-  'Auckland', 'Wellington', 'Christchurch', 'Hamilton', 'Tauranga', 'Dunedin', 'Palmerston North',
-  'New York', 'Los Angeles', 'Chicago', 'Houston', 'Phoenix', 'Philadelphia', 'San Antonio', 'San Diego',
-  'Dallas', 'San Jose', 'Austin', 'Jacksonville', 'Fort Worth', 'Columbus', 'Charlotte', 'San Francisco',
-  'Indianapolis', 'Seattle', 'Denver', 'Washington', 'Boston', 'El Paso', 'Nashville', 'Detroit', 'Portland',
-  'London', 'Manchester', 'Birmingham', 'Leeds', 'Glasgow', 'Sheffield', 'Bradford', 'Liverpool', 'Edinburgh',
-  'Bristol', 'Leicester', 'Wakefield', 'Cardiff', 'Coventry', 'Nottingham', 'Reading', 'Kingston upon Hull',
-  'Preston', 'Newport', 'Swansea', 'Bradford', 'Southend-on-Sea', 'Belfast', 'Derby', 'Plymouth', 'Luton',
-  'Paris', 'Marseille', 'Lyon', 'Toulouse', 'Nice', 'Nantes', 'Strasbourg', 'Montpellier', 'Bordeaux',
-  'Berlin', 'Hamburg', 'Munich', 'Cologne', 'Frankfurt', 'Stuttgart', 'Düsseldorf', 'Dortmund', 'Essen',
-  'Tokyo', 'Yokohama', 'Osaka', 'Nagoya', 'Sapporo', 'Fukuoka', 'Kobe', 'Kawasaki', 'Kyoto', 'Saitama',
-  'Sydney', 'Melbourne', 'Brisbane', 'Perth', 'Adelaide', 'Gold Coast', 'Newcastle', 'Canberra', 'Wollongong',
-  'Toronto', 'Montreal', 'Vancouver', 'Calgary', 'Edmonton', 'Ottawa', 'Winnipeg', 'Quebec City', 'Hamilton',
-  'Barcelona', 'Madrid', 'Valencia', 'Seville', 'Zaragoza', 'Málaga', 'Murcia', 'Palma', 'Las Palmas',
-  'Amsterdam', 'Rotterdam', 'The Hague', 'Utrecht', 'Eindhoven', 'Tilburg', 'Groningen', 'Almere', 'Breda'
-]
+// City database will be loaded from DynamoDB API
 
 export default function OnboardingPage(){
   const router = useRouter()
   
-  // Check authentication on component mount
+  // Check authentication and load cities on component mount
   useEffect(() => {
     const token = getToken()
     if (!token) {
       router.push('/login')
       return
     }
+    
+    // Load cities from API
+    const loadCities = async () => {
+      try {
+        setCitiesLoading(true)
+        const cities = await apiFetch('/api/cities')
+        setCityDatabase(cities)
+      } catch (error) {
+        console.error('Failed to load cities:', error)
+        // Set empty array if API fails
+        setCityDatabase([])
+      } finally {
+        setCitiesLoading(false)
+      }
+    }
+    
+    loadCities()
   }, [router])
 
   // Form state
@@ -47,6 +48,9 @@ export default function OnboardingPage(){
   const [isLoading, setIsLoading] = useState(false)
   const [cityInput, setCityInput] = useState('') // for city autocomplete
   const [showSuggestions, setShowSuggestions] = useState(false)
+  const [cityDatabase, setCityDatabase] = useState<string[]>([]) // cities from API
+  const [citiesLoading, setCitiesLoading] = useState(true)
+  const cityInputRef = useRef<HTMLInputElement>(null)
 
   // Memoized event handlers to prevent unnecessary re-renders
   const handleAvgTempChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -84,8 +88,8 @@ export default function OnboardingPage(){
   }, [])
 
   const handleCityInputFocus = useCallback(() => {
-    setShowSuggestions(cityInput.length > 0)
-  }, [cityInput])
+    setShowSuggestions(true)
+  }, [])
 
   const handleCityInputBlur = useCallback(() => {
     setTimeout(() => setShowSuggestions(false), 200)
@@ -98,13 +102,13 @@ export default function OnboardingPage(){
     return 'Like'
   }, [])
 
-  // City filtering and suggestions
+  // Filtered cities using useMemo for better performance
   const filteredCities = useMemo(() => {
-    if (!cityInput) return []
-    return CITY_DATABASE
+    if (!cityInput || cityDatabase.length === 0) return []
+    return cityDatabase
       .filter(city => city.toLowerCase().includes(cityInput.toLowerCase()))
       .slice(0, 10) // Show max 10 suggestions
-  }, [cityInput])
+  }, [cityInput, cityDatabase])
 
   const addCity = useCallback((cityName: string) => {
     const currentCities = favoriteCities.split(',').map(s => s.trim()).filter(Boolean)
@@ -131,7 +135,7 @@ export default function OnboardingPage(){
     const cityList = favoriteCities.split(',').map(s => s.trim()).filter(Boolean)
     
     // Validate that all cities are in our database
-    const invalidCities = cityList.filter(city => !CITY_DATABASE.includes(city))
+    const invalidCities = cityList.filter(city => !cityDatabase.includes(city))
     if (invalidCities.length > 0) {
       alert(`Invalid cities: ${invalidCities.join(', ')}. Please select cities from the suggestions.`)
       return
@@ -268,6 +272,8 @@ export default function OnboardingPage(){
     cityInput, 
     filteredCities, 
     showSuggestions,
+    citiesLoading,
+    cityInputRef,
     onCityInputChange,
     onCityInputFocus,
     onCityInputBlur,
@@ -278,13 +284,18 @@ export default function OnboardingPage(){
     cityInput: string
     filteredCities: string[]
     showSuggestions: boolean
+    citiesLoading: boolean
+    cityInputRef: React.RefObject<HTMLInputElement>
     onCityInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void
     onCityInputFocus: () => void
     onCityInputBlur: () => void
     onAddCity: (city: string) => void
     onRemoveCity: (city: string) => void
   }) => {
-    const selectedCities = favoriteCities.split(',').map(city => city.trim()).filter(Boolean)
+    const selectedCities = useMemo(() => 
+      favoriteCities.split(',').map(city => city.trim()).filter(Boolean), 
+      [favoriteCities]
+    )
     
     return (
       <QuestionCard title="7. List 3 cities with climates you love (for positive matching)">
@@ -313,12 +324,14 @@ export default function OnboardingPage(){
           {/* City input with autocomplete */}
           <div className="relative">
             <input 
+              key="city-input"
+              ref={cityInputRef}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
               value={cityInput} 
               onChange={onCityInputChange}
               onFocus={onCityInputFocus}
               onBlur={onCityInputBlur}
-              placeholder="Search for cities..."
+              placeholder={citiesLoading ? "Loading cities..." : "Search for cities..."}
               disabled={selectedCities.length >= 3}
             />
             
@@ -343,7 +356,10 @@ export default function OnboardingPage(){
           </div>
           
           <p className="text-sm text-gray-500">
-            Select up to 3 cities from our database. {3 - selectedCities.length} remaining.
+            {citiesLoading 
+              ? "Loading cities from database..." 
+              : `Select up to 3 cities from our database (${cityDatabase.length} cities available). ${3 - selectedCities.length} remaining.`
+            }
           </p>
         </div>
       </QuestionCard>
@@ -432,10 +448,13 @@ export default function OnboardingPage(){
       </QuestionCard>
 
       <CitySelector
+        key="city-selector"
         favoriteCities={favoriteCities}
         cityInput={cityInput}
         filteredCities={filteredCities}
         showSuggestions={showSuggestions}
+        citiesLoading={citiesLoading}
+        cityInputRef={cityInputRef}
         onCityInputChange={handleCityInputChange}
         onCityInputFocus={handleCityInputFocus}
         onCityInputBlur={handleCityInputBlur}

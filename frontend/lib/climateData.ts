@@ -61,19 +61,6 @@ export const getMonthLabel = (monthKey: string): string => {
   return monthKey
 }
 
-export const getQuarterLabel = (quarter: string): string => {
-  const quarterLabels: Record<string, string> = {
-    '2024Q1': 'Q1 2024 (Jan-Mar)',
-    '2024Q2': 'Q2 2024 (Apr-Jun)', 
-    '2024Q3': 'Q3 2024 (Jul-Sep)',
-    '2024Q4': 'Q4 2024 (Oct-Dec)',
-    '2023Q1': 'Q1 2023 (Jan-Mar)',
-    '2023Q2': 'Q2 2023 (Apr-Jun)', 
-    '2023Q3': 'Q3 2023 (Jul-Sep)',
-    '2023Q4': 'Q4 2023 (Oct-Dec)',
-  }
-  return quarterLabels[quarter] || quarter
-}
 
 // API functions
 export async function getAvailableMonths(): Promise<string[]> {
@@ -101,30 +88,6 @@ export async function getAvailableMonths(): Promise<string[]> {
   }
 }
 
-export async function getAvailableQuarters(): Promise<string[]> {
-  try {
-    const quarters = await apiFetch<string[]>('/api/climate/quarters', { withAuth: false })
-    // Sort quarters chronologically from oldest (2005Q1) to newest (2024Q4)
-    return quarters.sort((a: string, b: string) => {
-      const [yearA, quarterA] = a.split('Q')
-      const [yearB, quarterB] = b.split('Q')
-      if (yearA !== yearB) {
-        return parseInt(yearA) - parseInt(yearB)
-      }
-      return parseInt(quarterA) - parseInt(quarterB)
-    })
-  } catch (error) {
-    console.error('Failed to fetch available quarters:', error)
-    // fallback with full range from 2005 to 2024
-    const fallbackQuarters = []
-    for (let year = 2005; year <= 2024; year++) {
-      for (let quarter = 1; quarter <= 4; quarter++) {
-        fallbackQuarters.push(`${year}Q${quarter}`)
-      }
-    }
-    return fallbackQuarters
-  }
-}
 
 export async function getClimateDataForMonth(monthKey: string, signal?: AbortSignal): Promise<ClimateDataForMap[]> {
   try {
@@ -160,29 +123,3 @@ export async function getClimateDataForMonth(monthKey: string, signal?: AbortSig
   }
 }
 
-export async function getClimateDataForQuarter(quarter: string): Promise<ClimateDataForMap[]> {
-  try {
-    const cities = await apiFetch<CityClimateData[]>(`/api/climate/${quarter}`, { withAuth: false })
-    
-    // Filter out cities with missing data and transform for map usage
-    return cities
-      .filter((city: CityClimateData) => 
-        city.temperature !== null && 
-        city.precipitation !== null &&
-        !isNaN(city.latitude) &&
-        !isNaN(city.longitude)
-      )
-      .map((city: CityClimateData) => ({
-        cityName: city.cityName,
-        latitude: city.latitude,
-        longitude: city.longitude,
-        temperature: city.temperature!,
-        precipitation: city.precipitation!,
-        maxTemp: city.maxTemp || city.temperature!,
-        minTemp: city.minTemp || city.temperature!
-      }))
-  } catch (error) {
-    console.error(`Failed to fetch climate data for quarter ${quarter}:`, error)
-    return [] // return empty array on error
-  }
-}
