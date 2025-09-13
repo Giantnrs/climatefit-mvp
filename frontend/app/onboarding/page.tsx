@@ -7,6 +7,14 @@ import { apiFetch } from '@/lib/api'
 
 // City database will be loaded from DynamoDB API
 
+const QuestionCard = memo(({ title, children }: { title: string; children: React.ReactNode }) => (
+  <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+    <h3 className="text-lg font-medium text-gray-900 mb-3">{title}</h3>
+    {children}
+  </div>
+))
+QuestionCard.displayName = 'QuestionCard'
+
 export default function OnboardingPage(){
   const router = useRouter()
   
@@ -43,12 +51,11 @@ export default function OnboardingPage(){
   const [tempVariation, setTempVariation] = useState(5) // 0-10 (不喜欢 to 喜欢)
   const [precipitation, setPrecipitation] = useState('moderate') // rainfall preference
   const [humidity, setHumidity] = useState('no-preference') // humidity preference
-  const [favoriteCities, setFavoriteCities] = useState('')  // 3 cities
   const [save, setSave] = useState(true)
   const [isLoading, setIsLoading] = useState(false)
-  const [cityInput, setCityInput] = useState('') // for city autocomplete
-  const [showSuggestions, setShowSuggestions] = useState(false)
-  const [cityDatabase, setCityDatabase] = useState<string[]>([]) // cities from API
+  const [citySearch, setCitySearch] = useState('')
+  const [selectedCities, setSelectedCities] = useState<string[]>([])
+  const [cityDatabase, setCityDatabase] = useState<string[]>([])
   const [citiesLoading, setCitiesLoading] = useState(true)
   const cityInputRef = useRef<HTMLInputElement>(null)
 
@@ -70,29 +77,21 @@ export default function OnboardingPage(){
   }, [])
 
   const handlePrecipitationChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault()
     setPrecipitation(e.target.value)
   }, [])
 
   const handleHumidityChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault()
     setHumidity(e.target.value)
-  }, [])
-
-  const handleCityInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value
-    setCityInput(value)
-    setShowSuggestions(value.length > 0)
   }, [])
 
   const handleSaveChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setSave(e.target.checked)
   }, [])
 
-  const handleCityInputFocus = useCallback(() => {
-    setShowSuggestions(true)
-  }, [])
-
-  const handleCityInputBlur = useCallback(() => {
-    setTimeout(() => setShowSuggestions(false), 200)
+  const handleFormSubmit = useCallback((e: React.FormEvent) => {
+    e.preventDefault()
   }, [])
 
   // Format functions for sliders
@@ -102,40 +101,58 @@ export default function OnboardingPage(){
     return 'Like'
   }, [])
 
-  // Filtered cities using useMemo for better performance
+  // 新的城市搜索和选择逻辑
+  const handleCitySearch = useCallback((value: string) => {
+    setCitySearch(value)
+  }, [])
+
+  const handleCitySearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    handleCitySearch(e.target.value)
+  }, [handleCitySearch])
+
+  const addSelectedCity = useCallback((cityName: string) => {
+    setSelectedCities(prev => {
+      if (prev.length < 3 && !prev.includes(cityName)) {
+        return [...prev, cityName]
+      }
+      return prev
+    })
+    setCitySearch('')
+  }, [])
+
+  const removeSelectedCity = useCallback((cityToRemove: string) => {
+    setSelectedCities(prev => prev.filter(city => city !== cityToRemove))
+  }, [])
+
+  const handleRemoveCity = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    const city = e.currentTarget.dataset.city
+    if (city) removeSelectedCity(city)
+  }, [removeSelectedCity])
+
+  const handleAddCity = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    const city = e.currentTarget.dataset.city
+    if (city) addSelectedCity(city)
+  }, [addSelectedCity])
+
   const filteredCities = useMemo(() => {
-    if (!cityInput || cityDatabase.length === 0) return []
+    if (!citySearch || cityDatabase.length === 0) return []
     return cityDatabase
-      .filter(city => city.toLowerCase().includes(cityInput.toLowerCase()))
-      .slice(0, 10) // Show max 10 suggestions
-  }, [cityInput, cityDatabase])
+      .filter(city =>
+        city.toLowerCase().includes(citySearch.toLowerCase()) &&
+        !selectedCities.includes(city)
+      )
+      .slice(0, 8)
+  }, [citySearch, cityDatabase, selectedCities])
 
-  const addCity = useCallback((cityName: string) => {
-    const currentCities = favoriteCities.split(',').map(s => s.trim()).filter(Boolean)
-    if (currentCities.length < 3 && !currentCities.includes(cityName)) {
-      const newCities = [...currentCities, cityName].join(', ')
-      setFavoriteCities(newCities)
-    }
-    setCityInput('')
-    setShowSuggestions(false)
-  }, [favoriteCities])
-
-  const removeCity = useCallback((cityToRemove: string) => {
-    const currentCities = favoriteCities.split(',').map(s => s.trim()).filter(Boolean)
-    const newCities = currentCities.filter(city => city !== cityToRemove).join(', ')
-    setFavoriteCities(newCities)
-  }, [favoriteCities])
-
-  async function submit(){
+  async function submit(e?: React.MouseEvent<HTMLButtonElement>){
+    e?.preventDefault()
     if (!getToken()) {
       router.push('/login')
       return
     }
 
-    const cityList = favoriteCities.split(',').map(s => s.trim()).filter(Boolean)
-    
-    // Validate that all cities are in our database
-    const invalidCities = cityList.filter(city => !cityDatabase.includes(city))
+    // 验证选择的城市
+    const invalidCities = selectedCities.filter(city => !cityDatabase.includes(city))
     if (invalidCities.length > 0) {
       alert(`Invalid cities: ${invalidCities.join(', ')}. Please select cities from the suggestions.`)
       return
@@ -150,7 +167,7 @@ export default function OnboardingPage(){
         tempVariation,
         precipitation,
         humidity,
-        favoriteCities: cityList,
+        favoriteCities: selectedCities,
         save
       }
       
@@ -182,13 +199,6 @@ export default function OnboardingPage(){
   }
 
   // Memoized components to prevent re-rendering
-  const QuestionCard = memo(({ title, children }: { title: string; children: React.ReactNode }) => (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-      <h3 className="text-lg font-medium text-gray-900 mb-3">{title}</h3>
-      {children}
-    </div>
-  ))
-  QuestionCard.displayName = 'QuestionCard'
 
   const SliderQuestion = memo(({ 
     title, 
@@ -267,107 +277,9 @@ export default function OnboardingPage(){
   ))
   RadioQuestion.displayName = 'RadioQuestion'
 
-  const CitySelector = memo(({ 
-    favoriteCities, 
-    cityInput, 
-    filteredCities, 
-    showSuggestions,
-    citiesLoading,
-    cityInputRef,
-    onCityInputChange,
-    onCityInputFocus,
-    onCityInputBlur,
-    onAddCity,
-    onRemoveCity
-  }: {
-    favoriteCities: string
-    cityInput: string
-    filteredCities: string[]
-    showSuggestions: boolean
-    citiesLoading: boolean
-    cityInputRef: React.RefObject<HTMLInputElement>
-    onCityInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void
-    onCityInputFocus: () => void
-    onCityInputBlur: () => void
-    onAddCity: (city: string) => void
-    onRemoveCity: (city: string) => void
-  }) => {
-    const selectedCities = useMemo(() => 
-      favoriteCities.split(',').map(city => city.trim()).filter(Boolean), 
-      [favoriteCities]
-    )
-    
-    return (
-      <QuestionCard title="7. List 3 cities with climates you love (for positive matching)">
-        <div className="space-y-3">
-          {/* Selected cities display */}
-          {favoriteCities && (
-            <div className="flex flex-wrap gap-2">
-              {selectedCities.map((city, index) => (
-                <span 
-                  key={index}
-                  className="inline-flex items-center px-3 py-1 rounded-full bg-blue-100 text-blue-800 text-sm"
-                >
-                  {city}
-                  <button
-                    type="button"
-                    onClick={() => onRemoveCity(city)}
-                    className="ml-2 text-blue-600 hover:text-blue-800"
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-
-          {/* City input with autocomplete */}
-          <div className="relative">
-            <input 
-              key="city-input"
-              ref={cityInputRef}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
-              value={cityInput} 
-              onChange={onCityInputChange}
-              onFocus={onCityInputFocus}
-              onBlur={onCityInputBlur}
-              placeholder={citiesLoading ? "Loading cities..." : "Search for cities..."}
-              disabled={selectedCities.length >= 3}
-            />
-            
-            {/* Autocomplete suggestions */}
-            {showSuggestions && filteredCities.length > 0 && (
-              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                {filteredCities.map((city, index) => (
-                  <button
-                    key={index}
-                    type="button"
-                    className="w-full px-3 py-2 text-left hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
-                    onMouseDown={(e) => {
-                      e.preventDefault() // Prevent blur event
-                      onAddCity(city)
-                    }}
-                  >
-                    {city}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          
-          <p className="text-sm text-gray-500">
-            {citiesLoading 
-              ? "Loading cities from database..." 
-              : `Select up to 3 cities from our database (${cityDatabase.length} cities available). ${3 - selectedCities.length} remaining.`
-            }
-          </p>
-        </div>
-      </QuestionCard>
-    )
-  })
-  CitySelector.displayName = 'CitySelector'
 
   return (
+    <form onSubmit={handleFormSubmit}>
     <section className="max-w-2xl mx-auto space-y-5">
       <div className="text-center mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Climate Preference Questionnaire</h1>
@@ -447,20 +359,69 @@ export default function OnboardingPage(){
         </div>
       </QuestionCard>
 
-      <CitySelector
-        key="city-selector"
-        favoriteCities={favoriteCities}
-        cityInput={cityInput}
-        filteredCities={filteredCities}
-        showSuggestions={showSuggestions}
-        citiesLoading={citiesLoading}
-        cityInputRef={cityInputRef}
-        onCityInputChange={handleCityInputChange}
-        onCityInputFocus={handleCityInputFocus}
-        onCityInputBlur={handleCityInputBlur}
-        onAddCity={addCity}
-        onRemoveCity={removeCity}
-      />
+      <QuestionCard title="7. List 3 cities with climates you love (for positive matching)">
+        <div className="space-y-4">
+          {/* 已选择的城市 */}
+          {selectedCities.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {selectedCities.map((city, index) => (
+                <div
+                  key={index}
+                  className="inline-flex items-center px-3 py-1 rounded-full bg-blue-100 text-blue-800 text-sm"
+                >
+                  {city}
+                  <button
+                    type="button"
+                    data-city={city}
+                    onClick={handleRemoveCity}
+                    className="ml-2 text-blue-600 hover:text-blue-800 font-bold"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 搜索输入框 */}
+          <div className="relative">
+            <input
+              ref={cityInputRef}
+              type="text"
+              value={citySearch}
+              onChange={handleCitySearchChange}
+              placeholder={citiesLoading ? "Loading cities..." : "Search for cities..."}
+              disabled={selectedCities.length >= 3 || citiesLoading}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+            />
+
+            {/* 搜索建议 */}
+            {citySearch && filteredCities.length > 0 && selectedCities.length < 3 && (
+              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                {filteredCities.map((city, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    data-city={city}
+                    onClick={handleAddCity}
+                    className="w-full px-3 py-2 text-left hover:bg-blue-50 border-none bg-transparent cursor-pointer"
+                  >
+                    {city}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 提示信息 */}
+          <p className="text-sm text-gray-500">
+            {citiesLoading
+              ? "Loading cities from database..."
+              : `Select up to 3 cities from our database (${cityDatabase.length} cities available). ${3 - selectedCities.length} remaining.`
+            }
+          </p>
+        </div>
+      </QuestionCard>
 
       <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg">
         <input 
@@ -475,12 +436,14 @@ export default function OnboardingPage(){
         </label>
       </div>
 
-      <button 
-        onClick={submit} 
+      <button
+        type="button"
+        onClick={submit}
         disabled={isLoading}
         className="w-full px-6 py-3 rounded-lg bg-black text-white font-medium hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">
         {isLoading ? 'Submitting...' : 'Submit Questionnaire'}
       </button>
     </section>
+    </form>
   )
 }

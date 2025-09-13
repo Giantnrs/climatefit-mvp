@@ -10,12 +10,60 @@ public class JwtService
     private readonly string _issuer;
     private readonly string _aud;
     private readonly string _secret;
+    private readonly ILogger<JwtService> _logger;
 
-    public JwtService(IConfiguration cfg)
+    public JwtService(IConfiguration cfg, SecretsManagerService? secretsManager = null, ILogger<JwtService>? logger = null)
     {
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<JwtService>.Instance;
         _issuer = cfg["Jwt:Issuer"] ?? "ClimateFit";
         _aud = cfg["Jwt:Audience"] ?? "ClimateFitUsers";
-        _secret = Environment.GetEnvironmentVariable("JWT_SECRET") ?? cfg["Jwt:Secret"] ?? "CHANGE_ME_DEV_JWT_SECRET";
+
+        // Initialize secret with fallback chain
+        _secret = GetJwtSecret(cfg, secretsManager).GetAwaiter().GetResult();
+    }
+
+    private async Task<string> GetJwtSecret(IConfiguration cfg, SecretsManagerService? secretsManager)
+    {
+        // 1. Try environment variable first
+        var envSecret = Environment.GetEnvironmentVariable("JWT_SECRET");
+        if (!string.IsNullOrEmpty(envSecret))
+        {
+            _logger.LogInformation("Using JWT secret from environment variable");
+            return envSecret;
+        }
+
+        // 2. Try AWS Secrets Manager
+        if (secretsManager != null)
+        {
+            try
+            {
+                var secretName = cfg["Jwt:SecretName"] ?? "climatefit/jwt-secret";
+                _logger.LogInformation("Attempting to retrieve JWT secret from AWS Secrets Manager: {SecretName}", secretName);
+
+                var awsSecret = await secretsManager.GetSecretAsync(secretName);
+                if (!string.IsNullOrEmpty(awsSecret))
+                {
+                    _logger.LogInformation("Successfully retrieved JWT secret from AWS Secrets Manager");
+                    return awsSecret;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to retrieve JWT secret from AWS Secrets Manager, falling back to config");
+            }
+        }
+
+        // 3. Try configuration file
+        var configSecret = cfg["Jwt:Secret"];
+        if (!string.IsNullOrEmpty(configSecret))
+        {
+            _logger.LogInformation("Using JWT secret from configuration file");
+            return configSecret;
+        }
+
+        // 4. Fallback to default (only for development)
+        _logger.LogWarning("Using default JWT secret - this should only happen in development!");
+        return "CHANGE_ME_DEV_JWT_SECRET";
     }
 
     public string Create(string email, TimeSpan? life = null)

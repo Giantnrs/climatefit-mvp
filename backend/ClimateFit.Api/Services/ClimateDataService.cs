@@ -8,14 +8,16 @@ namespace ClimateFit.Api.Services;
 public class ClimateDataService
 {
     private readonly IAmazonS3 _s3Client;
-    private readonly string _bucketName = "climate-data-bucket-527";
-    private readonly string _dataKey = "climate-data/climate_famous300_cities_monthly_20250907_171040.json";
+    private readonly string _bucketName;
+    private readonly string _dataKey;
     private List<ClimateRecord>? _cachedData;
     private readonly SemaphoreSlim _cacheSemaphore = new(1, 1);
 
-    public ClimateDataService(IAmazonS3 s3Client)
+    public ClimateDataService(IAmazonS3 s3Client, IConfiguration config)
     {
         _s3Client = s3Client;
+        _bucketName = config["S3:BucketName"] ?? "climate-data-s3bucket-527";
+        _dataKey = config["S3:ClimateDataKey"] ?? "climate-data/climate_famous300_cities_monthly_20250911_225524.json";
     }
 
     public async Task<List<ClimateRecord>> GetClimateDataAsync()

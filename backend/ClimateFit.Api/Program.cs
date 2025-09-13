@@ -4,6 +4,7 @@ using Microsoft.OpenApi.Models;
 using System.Text.Json;
 using Amazon.DynamoDBv2;
 using Amazon.S3;
+using Amazon.SecretsManager;
 using Amazon;
 using System.Security.Claims;
 using System.Text;
@@ -17,10 +18,20 @@ builder.Services.AddCors(opt=> opt.AddPolicy("frontend", p=> p.WithOrigins(front
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c=> c.SwaggerDoc("v1", new OpenApiInfo{ Title="ClimateFit API", Version="v1" }));
 
-// Add JWT Authentication
-var jwtKey = builder.Configuration["Jwt:Secret"];
-// Register services
+// Register AWS Services
+var region = builder.Configuration["DynamoDB:Region"] ?? "us-east-1";
+builder.Services.AddSingleton<IAmazonSecretsManager>(sp =>
+{
+    var config = new AmazonSecretsManagerConfig { RegionEndpoint = RegionEndpoint.GetBySystemName(region) };
+    return new AmazonSecretsManagerClient(config);
+});
+
+// Register custom services
+builder.Services.AddSingleton<SecretsManagerService>();
 builder.Services.AddSingleton<CityRecommendationService>();
+
+// Initialize JWT secret asynchronously
+string jwtKey = await GetJwtSecretAsync(builder);
 
 builder.Services.AddAuthentication("Bearer")
     .AddJwtBearer("Bearer", options =>
@@ -54,22 +65,32 @@ builder.Services.AddAuthentication("Bearer")
     });
 
 builder.Services.AddAuthorization();
-builder.Services.AddSingleton<JwtService>();
+builder.Services.AddSingleton<JwtService>(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var secretsManager = sp.GetService<SecretsManagerService>();
+    var logger = sp.GetService<ILogger<JwtService>>();
+    return new JwtService(config, secretsManager, logger);
+});
 
 // Configure AWS DynamoDB and S3
-var region = builder.Configuration["DynamoDB:Region"] ?? "us-east-1";
-builder.Services.AddSingleton<IAmazonDynamoDB>(sp => 
+builder.Services.AddSingleton<IAmazonDynamoDB>(sp =>
 {
     var config = new AmazonDynamoDBConfig { RegionEndpoint = RegionEndpoint.GetBySystemName(region) };
     return new AmazonDynamoDBClient(config);
 });
-builder.Services.AddSingleton<IAmazonS3>(sp => 
+builder.Services.AddSingleton<IAmazonS3>(sp =>
 {
     var config = new AmazonS3Config { RegionEndpoint = RegionEndpoint.GetBySystemName(region) };
     return new AmazonS3Client(config);
 });
 builder.Services.AddSingleton<DynamoDbService>();
-builder.Services.AddSingleton<ClimateDataService>();
+builder.Services.AddSingleton<ClimateDataService>(sp =>
+{
+    var s3Client = sp.GetRequiredService<IAmazonS3>();
+    var config = sp.GetRequiredService<IConfiguration>();
+    return new ClimateDataService(s3Client, config);
+});
 
 // Keep FileDb as fallback for development
 builder.Services.AddSingleton<FileDb<DbSchema>>(sp => {
@@ -410,3 +431,55 @@ app.MapGet("/debug/claims", async (HttpContext ctx) =>
 }).RequireAuthorization();
 
 app.Run();
+
+// Helper function to get JWT secret from AWS Secrets Manager with fallback
+static async Task<string> GetJwtSecretAsync(WebApplicationBuilder builder)
+{
+    // 1. Try environment variable first
+    var envSecret = Environment.GetEnvironmentVariable("JWT_SECRET");
+    if (!string.IsNullOrEmpty(envSecret))
+    {
+        Console.WriteLine("✅ Using JWT secret from environment variable");
+        return envSecret;
+    }
+
+    // 2. Try AWS Secrets Manager
+    try
+    {
+        var region = builder.Configuration["DynamoDB:Region"] ?? "us-east-1";
+        var secretName = builder.Configuration["Jwt:SecretName"] ?? "climatefit/dev/jwt";
+
+        var config = new AmazonSecretsManagerConfig { RegionEndpoint = RegionEndpoint.GetBySystemName(region) };
+        using var secretsClient = new AmazonSecretsManagerClient(config);
+
+        Console.WriteLine($"🔍 Attempting to retrieve JWT secret from AWS Secrets Manager: {secretName}");
+
+        var request = new Amazon.SecretsManager.Model.GetSecretValueRequest
+        {
+            SecretId = secretName
+        };
+
+        var response = await secretsClient.GetSecretValueAsync(request);
+        if (!string.IsNullOrEmpty(response.SecretString))
+        {
+            Console.WriteLine("✅ Successfully retrieved JWT secret from AWS Secrets Manager");
+            return response.SecretString;
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"⚠️  Failed to retrieve JWT secret from AWS Secrets Manager: {ex.Message}");
+    }
+
+    // 3. Try configuration file
+    var configSecret = builder.Configuration["Jwt:Secret"];
+    if (!string.IsNullOrEmpty(configSecret))
+    {
+        Console.WriteLine("✅ Using JWT secret from configuration file");
+        return configSecret;
+    }
+
+    // 4. Fallback to default (only for development)
+    Console.WriteLine("⚠️  Using default JWT secret - this should only happen in development!");
+    return "CHANGE_ME_DEV_JWT_SECRET";
+}
