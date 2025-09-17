@@ -11,7 +11,7 @@ const amplifyConfig: ResourcesConfig = {
           domain: 'us-east-1djzjfpja1.auth.us-east-1.amazoncognito.com',
           scopes: ['openid', 'email', 'phone'],
           redirectSignIn: ['http://localhost:3000/login'],
-          redirectSignOut: ['http://localhost:3000/'],
+          redirectSignOut: [],
           responseType: 'code',
           
         }

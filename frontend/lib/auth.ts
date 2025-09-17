@@ -13,8 +13,7 @@ export const getCognitoToken = async () => {
   try {
     const user = await getCurrentUser()
     if (user) {
-      // Get the token from localStorage (set by Cognito after successful auth)
-         console.log('getCognitoToken user:', user)
+      console.log('getCognitoToken user:', user)
       return getToken()
     }
     return null
@@ -24,12 +23,46 @@ export const getCognitoToken = async () => {
   }
 }
 
+// Force logout by redirecting to Cognito logout URL
 export const signOutUser = async () => {
   try {
-    await signOut()
+    console.log('Starting force logout...')
+    
+    // Clear all local auth data
     clearToken()
+    
+    // Clear all Cognito-related storage
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('amplify-') || 
+          key.startsWith('aws-amplify-') || 
+          key.startsWith('CognitoIdentityServiceProvider')) {
+        localStorage.removeItem(key)
+      }
+    })
+    
+    Object.keys(sessionStorage).forEach(key => {
+      if (key.startsWith('amplify-') || 
+          key.startsWith('aws-amplify-') || 
+          key.startsWith('CognitoIdentityServiceProvider')) {
+        sessionStorage.removeItem(key)
+      }
+    })
+    
+    // Force redirect to Cognito logout endpoint
+    const cognitoDomain = 'us-east-1djzjfpja1.auth.us-east-1.amazoncognito.com'
+    const clientId = '2tj54esn827sjk6iro0b1r2hrq'
+    const logoutUri = window.location.origin // This will be http://localhost:3000 in development
+    const logoutUrl = `https://${cognitoDomain}/logout?client_id=${clientId}&logout_uri=${encodeURIComponent(logoutUri)}`
+    
+    console.log('Redirecting to logout URL:', logoutUrl)
+    
+    // This will terminate the Cognito session and redirect back to your app
+    window.location.href = logoutUrl
+    
   } catch (error) {
-    console.error('Error signing out:', error)
-    clearToken() // Clear token anyway
+    console.error('Error in logout process:', error)
+    // Fallback: just clear everything and refresh
+    clearToken()
+    window.location.reload()
   }
 }
