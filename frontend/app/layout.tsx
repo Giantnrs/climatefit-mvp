@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import Nav from '@/components/Nav'
 import Footer from '@/components/Footer'
+import "./../lib/amplifyConfig"
 
 export const metadata: Metadata = { title:'ClimateFit', description:'Personalised climate matching' }
 

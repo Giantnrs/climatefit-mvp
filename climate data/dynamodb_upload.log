@@ -1,0 +1,20 @@
+2025-09-14 19:07:20,522 - INFO - Starting City Climate Profiles DynamoDB upload
+2025-09-14 19:07:20,557 - INFO - Found credentials in shared credentials file: ~/.aws/credentials
+2025-09-14 19:07:20,645 - INFO - Connected to DynamoDB in region: us-east-1
+2025-09-14 19:07:21,751 - INFO - Table 'CityClimateProfiles' already exists
+2025-09-14 19:07:22,264 - INFO - Successfully wrote batch of 25 items
+2025-09-14 19:07:22,568 - INFO - Successfully wrote batch of 25 items
+2025-09-14 19:07:22,842 - INFO - Successfully wrote batch of 25 items
+2025-09-14 19:07:23,123 - INFO - Successfully wrote batch of 25 items
+2025-09-14 19:07:23,422 - INFO - Successfully wrote batch of 25 items
+2025-09-14 19:07:23,697 - INFO - Successfully wrote batch of 25 items
+2025-09-14 19:07:24,088 - INFO - Successfully wrote batch of 25 items
+2025-09-14 19:07:24,414 - INFO - Successfully wrote batch of 25 items
+2025-09-14 19:07:24,723 - INFO - Successfully wrote batch of 25 items
+2025-09-14 19:07:25,005 - INFO - Successfully wrote batch of 25 items
+2025-09-14 19:07:25,286 - INFO - Successfully wrote batch of 25 items
+2025-09-14 19:07:25,571 - INFO - Successfully wrote batch of 25 items
+2025-09-14 19:07:26,184 - INFO - Successfully wrote batch of 25 items
+2025-09-14 19:07:26,456 - INFO - Successfully wrote batch of 12 items
+2025-09-14 19:07:26,456 - INFO - Successfully uploaded 337 city climate profiles to DynamoDB
+2025-09-14 19:07:27,384 - INFO - Verification complete: 337 items in table
