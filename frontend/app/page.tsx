@@ -7,6 +7,8 @@ import { getToken } from '@/lib/auth'
 // Client-side rendering for MapView to avoid SSR issues
 const MapView = dynamic(() => import('@/components/MapView'), { ssr: false })
 
+
+
 export default function HomePage(){
   const [layer, setLayer] = useState<'temp'|'precip'>('temp')
   const router = useRouter()

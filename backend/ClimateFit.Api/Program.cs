@@ -30,41 +30,111 @@ builder.Services.AddSingleton<IAmazonSecretsManager>(sp =>
 builder.Services.AddSingleton<SecretsManagerService>();
 builder.Services.AddSingleton<CityRecommendationService>();
 
-// Initialize JWT secret asynchronously
-string jwtKey = await GetJwtSecretAsync(builder);
-
+// Configure JWT Authentication to support both custom JWT and AWS Cognito
 builder.Services.AddAuthentication("Bearer")
     .AddJwtBearer("Bearer", options =>
     {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = builder.Configuration["Jwt:Issuer"],
-            ValidAudience = builder.Configuration["Jwt:Audience"],
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
-            ClockSkew = TimeSpan.FromSeconds(30) // Allow a small clock skew
-        };
+        // Get Cognito configuration
+        var cognitoUserPoolId = builder.Configuration["Cognito:UserPoolId"];
+        var cognitoRegion = builder.Configuration["Cognito:Region"] ?? region;
         
-        // Add debugging
+        if (!string.IsNullOrEmpty(cognitoUserPoolId))
+        {
+            // Configure for AWS Cognito JWT validation
+            var cognitoIssuer = $"https://cognito-idp.{cognitoRegion}.amazonaws.com/{cognitoUserPoolId}";
+            var cognitoJwksUri = $"{cognitoIssuer}/.well-known/jwks.json";
+            
+            Console.WriteLine($"✅ Configuring JWT authentication for AWS Cognito:");
+            Console.WriteLine($"   Issuer: {cognitoIssuer}");
+            Console.WriteLine($"   JWKS URI: {cognitoJwksUri}");
+            
+            options.Authority = cognitoIssuer;
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidIssuer = cognitoIssuer,
+                ValidateAudience = false, // Cognito tokens may not have audience
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                ClockSkew = TimeSpan.FromMinutes(5) // Allow some clock skew
+            };
+        }
+        else
+        {
+            // Fallback to custom JWT for development/backwards compatibility
+            Console.WriteLine("⚠️  No Cognito configuration found, using custom JWT validation");
+            
+            var jwtKey = GetJwtSecretAsync(builder).GetAwaiter().GetResult();
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                ValidIssuer = builder.Configuration["Jwt:Issuer"],
+                ValidAudience = builder.Configuration["Jwt:Audience"],
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+                ClockSkew = TimeSpan.FromSeconds(30)
+            };
+        }
+        
+        // Add debugging for both authentication types
         options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
         {
             OnAuthenticationFailed = context =>
             {
-                Console.WriteLine($"JWT Auth Failed: {context.Exception.Message}");
+                Console.WriteLine($"❌ JWT Auth Failed: {context.Exception.Message}");
                 return Task.CompletedTask;
             },
             OnTokenValidated = context =>
             {
-                Console.WriteLine("JWT Token validated successfully");
+                Console.WriteLine("✅ JWT Token validated successfully");
+                
+                // Log all claims for debugging
+                Console.WriteLine("Token Claims:");
+                foreach (var claim in context.Principal.Claims)
+                {
+                    Console.WriteLine($"  {claim.Type} = {claim.Value}");
+                }
+                
+                // Ensure we have an email claim for our application logic
+                var email = context.Principal.FindFirst("email")?.Value ?? 
+                           context.Principal.FindFirst(ClaimTypes.Email)?.Value ??
+                           context.Principal.FindFirst("cognito:username")?.Value ??
+                           context.Principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+                
+                if (!string.IsNullOrEmpty(email))
+                {
+                    // Add standardized email claim if it doesn't exist
+                    if (!context.Principal.HasClaim(ClaimTypes.Email, email))
+                    {
+                        var identity = context.Principal.Identity as ClaimsIdentity;
+                        identity?.AddClaim(new Claim(ClaimTypes.Email, email));
+                    }
+                    Console.WriteLine($"✅ Email claim standardized: {email}");
+                }
+                else
+                {
+                    Console.WriteLine("⚠️  No email claim found in token");
+                }
+                
+                return Task.CompletedTask;
+            },
+            OnMessageReceived = context =>
+            {
+                var token = context.Request.Headers.Authorization.FirstOrDefault()?.Split(" ").Last();
+                if (!string.IsNullOrEmpty(token))
+                {
+                    Console.WriteLine($"📥 Received JWT token: {token.Substring(0, Math.Min(50, token.Length))}...");
+                }
                 return Task.CompletedTask;
             }
         };
     });
 
 builder.Services.AddAuthorization();
+
+// Keep JwtService for backward compatibility and custom token generation if needed
 builder.Services.AddSingleton<JwtService>(sp =>
 {
     var config = sp.GetRequiredService<IConfiguration>();
@@ -112,6 +182,7 @@ catch (Exception ex)
     Console.WriteLine($"⚠️  DynamoDB initialization failed: {ex.Message}");
     Console.WriteLine("💡 Will fall back to local file storage. Configure AWS credentials to use DynamoDB.");
 }
+
 app.UseCors("frontend");
 app.UseAuthentication();
 app.UseAuthorization();
@@ -119,6 +190,7 @@ if(app.Environment.IsDevelopment()){ app.UseSwagger(); app.UseSwaggerUI(); }
 
 app.MapGet("/health", ()=> Results.Ok( new { ok=true, time=DateTimeOffset.UtcNow }));
 
+// Keep existing auth endpoints for backward compatibility
 app.MapPost("/auth/register", async (RegisterRequest req, DynamoDbService dynamoDb) =>
 {
     try
@@ -197,7 +269,8 @@ app.MapPost("/auth/forgot", async (ForgotRequest req, DynamoDbService dynamoDb) 
 app.MapGet("/profile", async (HttpContext ctx, DynamoDbService dynamoDb) =>
 {
     try
-    {   Console.WriteLine("=== Profile endpoint called ===");
+    {   
+        Console.WriteLine("=== Profile endpoint called ===");
         Console.WriteLine($"User.Identity.IsAuthenticated: {ctx.User.Identity.IsAuthenticated}");
         Console.WriteLine("All claims:");
         foreach (var claim in ctx.User.Claims)
@@ -205,7 +278,12 @@ app.MapGet("/profile", async (HttpContext ctx, DynamoDbService dynamoDb) =>
             Console.WriteLine($"  {claim.Type} = {claim.Value}");
         }
         
-        var email = ctx.User.FindFirst(ClaimTypes.Email)?.Value;
+        // Extract email from various possible claim types (supports both custom JWT and Cognito)
+        var email = ctx.User.FindFirst(ClaimTypes.Email)?.Value ?? 
+                   ctx.User.FindFirst("email")?.Value ??
+                   ctx.User.FindFirst("cognito:username")?.Value ??
+                   ctx.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+        
         Console.WriteLine($"Extracted email: '{email}'");
         
         if (string.IsNullOrEmpty(email))
@@ -217,13 +295,30 @@ app.MapGet("/profile", async (HttpContext ctx, DynamoDbService dynamoDb) =>
         var user = await dynamoDb.GetUserAsync(email);
         if (user == null)
         {
-            return Results.NotFound(new { error = "User not found" });
+            // For Cognito users who don't exist in our database yet, create a minimal user record
+            Console.WriteLine($"User not found in database, creating new record for Cognito user: {email}");
+            
+            var newUser = new UserEntity
+            {
+                Email = email,
+                Username = ctx.User.FindFirst("cognito:username")?.Value ?? 
+                         ctx.User.FindFirst("given_name")?.Value ?? 
+                         ctx.User.FindFirst("name")?.Value ?? 
+                         email.Split('@')[0],
+                PasswordHash = "", // No password for Cognito users
+                CreatedAt = DateTime.UtcNow,
+                History = new List<HistoryItem>()
+            };
+            
+            await dynamoDb.CreateUserAsync(newUser);
+            return Results.Ok(new ProfileDto(newUser.Email, newUser.Username, newUser.Preferences, newUser.History));
         }
 
         return Results.Ok(new ProfileDto(user.Email, user.Username, user.Preferences, user.History));
     }
     catch (Exception ex)
     {
+        Console.WriteLine($"❌ Profile endpoint error: {ex.Message}");
         return Results.BadRequest(new { error = ex.Message });
     }
 }).RequireAuthorization();
@@ -232,7 +327,11 @@ app.MapPut("/profile/preferences", async (HttpContext ctx, DynamoDbService dynam
 {
     try
     {
-        var email = ctx.User.FindFirst(ClaimTypes.Email)?.Value ?? ctx.User.FindFirst("email")?.Value;
+        var email = ctx.User.FindFirst(ClaimTypes.Email)?.Value ?? 
+                   ctx.User.FindFirst("email")?.Value ??
+                   ctx.User.FindFirst("cognito:username")?.Value ??
+                   ctx.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+        
         if (string.IsNullOrEmpty(email))
         {
             return Results.Unauthorized();
@@ -263,9 +362,13 @@ app.MapPost("/results", async (OnboardingRequest req, HttpContext ctx, DynamoDbS
 {
     try
     {
-        // Extract email from JWT token (optional for anonymous users)
+        // Extract email from JWT token (supports both custom JWT and Cognito, optional for anonymous users)
         string email = "anonymous@local";
-        var userEmail = ctx.User.FindFirst(ClaimTypes.Email)?.Value ?? ctx.User.FindFirst("email")?.Value;
+        var userEmail = ctx.User.FindFirst(ClaimTypes.Email)?.Value ?? 
+                       ctx.User.FindFirst("email")?.Value ??
+                       ctx.User.FindFirst("cognito:username")?.Value ??
+                       ctx.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+        
         if (!string.IsNullOrEmpty(userEmail))
         {
             email = userEmail;
@@ -290,9 +393,28 @@ app.MapPost("/results", async (OnboardingRequest req, HttpContext ctx, DynamoDbS
         {
             Console.WriteLine($"Updating user data for logged in user: {email}");
             var user = await dynamoDb.GetUserAsync(email);
+            
+            if (user == null)
+            {
+                // Create user record for new Cognito users
+                Console.WriteLine($"Creating new user record for Cognito user: {email}");
+                user = new UserEntity
+                {
+                    Email = email,
+                    Username = ctx.User.FindFirst("cognito:username")?.Value ?? 
+                             ctx.User.FindFirst("given_name")?.Value ?? 
+                             ctx.User.FindFirst("name")?.Value ?? 
+                             email.Split('@')[0],
+                    PasswordHash = "", // No password for Cognito users
+                    CreatedAt = DateTime.UtcNow,
+                    History = new List<HistoryItem>()
+                };
+                await dynamoDb.CreateUserAsync(user);
+            }
+            
             if (user != null)
             {
-                Console.WriteLine($"User found. Current preferences: {user.Preferences != null}");
+                Console.WriteLine($"User found/created. Current preferences: {user.Preferences != null}");
                 Console.WriteLine($"Save flag: {req.save}");
                 
                 if (req.save == true)
@@ -330,10 +452,6 @@ app.MapPost("/results", async (OnboardingRequest req, HttpContext ctx, DynamoDbS
                 await dynamoDb.UpdateUserAsync(user);
                 Console.WriteLine("User data updated successfully");
             }
-            else
-            {
-                Console.WriteLine($"⚠️ User not found in database: {email}");
-            }
         }
         else
         {
@@ -348,7 +466,7 @@ app.MapPost("/results", async (OnboardingRequest req, HttpContext ctx, DynamoDbS
     }
 });
 
-// City list endpoint for questionnaire
+// Keep all existing endpoints unchanged
 app.MapGet("/api/cities", async (DynamoDbService dynamoDb) =>
 {
     try
@@ -364,7 +482,6 @@ app.MapGet("/api/cities", async (DynamoDbService dynamoDb) =>
     }
 });
 
-// Climate data endpoints
 app.MapGet("/api/climate/months", async (ClimateDataService climateService) =>
 {
     try
@@ -427,12 +544,12 @@ app.MapGet("/debug/claims", async (HttpContext ctx) =>
     foreach (var claim in ctx.User.Claims)
         Console.WriteLine($"Claim: {claim.Type} = {claim.Value}");
 
-    return Results.Ok();
+    return Results.Ok(ctx.User.Claims.Select(c => new { type = c.Type, value = c.Value }).ToList());
 }).RequireAuthorization();
 
 app.Run();
 
-// Helper function to get JWT secret from AWS Secrets Manager with fallback
+// Helper function to get JWT secret from AWS Secrets Manager with fallback (for backward compatibility)
 static async Task<string> GetJwtSecretAsync(WebApplicationBuilder builder)
 {
     // 1. Try environment variable first
