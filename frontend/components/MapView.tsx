@@ -5,6 +5,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { getClimateDataForMonth, getTemperatureColor, getRainfallColor, ClimateDataForMap } from '@/lib/climateData'
 import ContinentSelector, { Continent } from './ContinentSelector'
 import { TimeSelector } from './TimeSelector'
+import Timeline from './Timeline'
 
 type Props = { 
   layer: 'temp' | 'precip'
@@ -188,4 +189,25 @@ export default function MapView({ layer }: Props) {
       </div>
     </div>
   )
+
+  return (
+  <div className="relative">
+    <MapContainer /* existing MapContainer configuration */ >
+      {/* existing Circle, Tooltip and related content */}
+    </MapContainer>
+
+    {/* Continent selector */}
+    <ContinentSelector 
+      onContinentSelect={handleContinentSelect}
+      selectedContinent={selectedContinent?.name || null}
+    />
+
+    {/* Bottom timeline */}
+    <Timeline onChange={handleTimeChange} />
+
+    {/* Legend */}
+    {/* existing legend code */}
+  </div>
+);
+
 }
