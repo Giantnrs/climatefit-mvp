@@ -6,6 +6,7 @@ frontend/dist/
 frontend/.turbo/
 frontend/.vercel/
 npm-debug.log*
+clmate data/
 # 环境变量文件（保留一个模板）
 frontend/.env*
 !frontend/.env.example
